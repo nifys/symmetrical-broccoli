@@ -20,19 +20,12 @@ TOPIC_ANNOUNCE = 1      # тема для уведомлений о новост
 TOPIC_CONTRACT = 6      # тема для контрактов
 
 # ---------- ХРАНИЛИЩЕ (in memory) ----------
-# Каталог: номер кнопки -> название
 catalog_buttons: Dict[str, str] = {}
-
-# Чёрный список: юзернейм -> (причина, дата бана)
 blacklist: Dict[str, Tuple[str, datetime]] = {}
-
-# Кому приходят уведомления о заказах (username'ы)
 notification_recipients: Set[str] = set()
-
-# Кто может использовать /newkontr
 kontr_allowed: Set[int] = set()
+user_purchases: Dict[int, int] = {}
 
-# Для ConversationHandler добавления/редактирования кнопки
 EDIT_BUTTON_NAME = 1
 
 # ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
@@ -44,12 +37,6 @@ def is_banned(username: str) -> Tuple[bool, str]:
 
 def format_datetime(dt: datetime) -> str:
     return dt.strftime("%d.%m.%Y")
-
-# ---------- ФИЛЬТР ДЛЯ ГРУППЫ И ТЕМ ----------
-class Filters:
-    group_topic_24 = filters.Chat(chat_id=GROUP_ID) & filters.IsTopic & filters.Topic(TOPIC_CATALOG)
-    group_topic_3 = filters.Chat(chat_id=GROUP_ID) & filters.IsTopic & filters.Topic(TOPIC_NEWS)
-    group_any_topic = filters.Chat(chat_id=GROUP_ID) & filters.IsTopic
 
 # ---------- КОМАНДА /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,7 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📋 Каталог", callback_data="catalog")]]
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ---------- КАТАЛОГ (inline) ----------
+# ---------- КАТАЛОГ ----------
 async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -88,8 +75,6 @@ async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ---------- ПОКУПКА ----------
-user_purchases: Dict[int, int] = {}  # user_id -> количество купленных билетов сегодня
-
 async def buy_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -101,41 +86,26 @@ async def buy_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     button_num = data.split("_")[1]
     button_name = catalog_buttons.get(button_num, "Билет")
 
-    # Проверка лимита: не больше 2 в день
     today = datetime.now().date()
     if user_id in user_purchases and user_purchases[user_id] >= 2:
         await query.edit_message_text("❌ Вы уже купили максимум 2 билета на сегодня.")
         return
 
-    # Увеличиваем счётчик
     user_purchases[user_id] = user_purchases.get(user_id, 0) + 1
     bought = user_purchases[user_id]
 
-    # Уведомление админу и получателям
     notify_text = f"🆕 Новый заказ: {button_name} @{username} купил {bought}/2"
-    # ЛС админу
+    
     try:
         await context.bot.send_message(ADMIN_ID, notify_text)
     except:
         pass
-    # ЛС получателям уведомлений
+    
     for recip in notification_recipients:
         try:
             await context.bot.send_message(username=recip, text=notify_text)
         except:
             pass
-
-    # Группа тема 24 — сообщение с кнопкой заказа (эмулируем новое сообщение с кнопкой)
-    keyboard = [[InlineKeyboardButton("🎟 Заказать билет", callback_data="catalog")]]
-    try:
-        await context.bot.send_message(
-            chat_id=GROUP_ID,
-            message_thread_id=TOPIC_CATALOG,
-            text="🚃 Хотите билетик?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    except:
-        pass
 
     await query.edit_message_text(f"✅ Заказ оформлен!\n{button_name} — {bought}/2 билетов.\nСпасибо за покупку! 😊")
 
@@ -158,7 +128,6 @@ async def apanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🛠 Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ----- Уведомления -----
 async def admin_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -168,7 +137,6 @@ async def admin_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data['admin_action'] = 'toggle_notify'
 
-# ----- Бан -----
 async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -179,7 +147,6 @@ async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data['admin_action'] = 'ban'
 
-# ----- Редактирование каталога -----
 async def admin_edit_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -204,7 +171,6 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     username = update.effective_user.username
 
-    # --- Переключение уведомлений ---
     if action == 'toggle_notify':
         target = text.lstrip('@')
         if target in notification_recipients:
@@ -216,7 +182,6 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('admin_action')
         return
 
-    # --- Бан / разбан ---
     if action == 'ban':
         parts = text.split(maxsplit=2)
         if len(parts) < 3:
@@ -233,7 +198,6 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('admin_action')
         return
 
-    # --- Редактирование каталога ---
     if action == 'edit_catalog':
         parts = text.split(maxsplit=1)
         if len(parts) != 2:
@@ -313,6 +277,10 @@ async def delkontr(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- ГРУППОВАЯ ЛОГИКА ----------
 async def group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Проверяем, есть ли message_thread_id (это тема)
+    if not update.effective_message.message_thread_id:
+        return
+        
     # Если сообщение в теме 3 (новости) -> уведомление в тему 1 и 24
     if update.effective_message.message_thread_id == TOPIC_NEWS:
         text = "📢 Новый билет или новость в теме «Расписание»!"
@@ -359,11 +327,17 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_ban, pattern="^admin_ban$"))
     application.add_handler(CallbackQueryHandler(admin_edit_catalog, pattern="^admin_edit_catalog$"))
 
-    # Текст от админа (обработка админ-действий)
-    application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & filters.User(user_id=ADMIN_ID), handle_admin_text))
+    # Текст от админа
+    application.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.PRIVATE & filters.User(user_id=ADMIN_ID), 
+        handle_admin_text
+    ))
 
-    # Групповые сообщения (только темы)
-    application.add_handler(MessageHandler(Filters.group_any_topic, group_message_handler))
+    # Групповые сообщения
+    application.add_handler(MessageHandler(
+        filters.Chat(chat_id=GROUP_ID) & (~filters.COMMAND), 
+        group_message_handler
+    ))
 
     # Запуск
     application.run_polling()
