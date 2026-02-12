@@ -1,4 +1,18 @@
 import os
+import sys
+import logging
+from datetime import datetime, timedelta
+from typing import Dict, Set, Optional, Tuple
+
+# Явно указываем использовать asyncio
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, filters, ContextTypes
+)
+from telegram.constants import ParseMode
+import os
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Set, Optional, Tuple
