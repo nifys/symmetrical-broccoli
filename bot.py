@@ -1,26 +1,22 @@
 import os
 import sys
-import logging
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Set, Optional, Tuple
 
-# Явно указываем использовать asyncio
-import asyncio
+# Настройка event loop для Render
+try:
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        print("Loop already running")
+except:
+    print("Creating new event loop")
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes
-)
-from telegram.constants import ParseMode
-import os
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, Set, Optional, Tuple
-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes, ConversationHandler
 )
 from telegram.constants import ParseMode
 
@@ -39,8 +35,6 @@ blacklist: Dict[str, Tuple[str, datetime]] = {}
 notification_recipients: Set[str] = set()
 kontr_allowed: Set[int] = set()
 user_purchases: Dict[int, int] = {}
-
-EDIT_BUTTON_NAME = 1
 
 # ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
 def is_banned(username: str) -> Tuple[bool, str]:
@@ -100,7 +94,6 @@ async def buy_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     button_num = data.split("_")[1]
     button_name = catalog_buttons.get(button_num, "Билет")
 
-    today = datetime.now().date()
     if user_id in user_purchases and user_purchases[user_id] >= 2:
         await query.edit_message_text("❌ Вы уже купили максимум 2 билета на сегодня.")
         return
@@ -183,7 +176,6 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip()
-    username = update.effective_user.username
 
     if action == 'toggle_notify':
         target = text.lstrip('@')
@@ -260,8 +252,8 @@ async def newkontr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=msg
         )
         await update.message.reply_text("✅ Контракт опубликован.")
-    except:
-        await update.message.reply_text("❌ Ошибка отправки в группу.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка отправки в группу: {e}")
 
 async def givekontr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -273,8 +265,8 @@ async def givekontr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kontr_allowed.add(user_id)
         await context.bot.send_message(user_id, "✅ Вам выдали команду /newkontr")
         await update.message.reply_text("✅ Выдано.")
-    except:
-        pass
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
 
 async def delkontr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -286,8 +278,8 @@ async def delkontr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kontr_allowed.discard(user_id)
         await context.bot.send_message(user_id, "❌ У вас забрали команду /newkontr")
         await update.message.reply_text("✅ Забрано.")
-    except:
-        pass
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
 
 # ---------- ГРУППОВАЯ ЛОГИКА ----------
 async def group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -299,31 +291,43 @@ async def group_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if update.effective_message.message_thread_id == TOPIC_NEWS:
         text = "📢 Новый билет или новость в теме «Расписание»!"
         # тема 1
-        await context.bot.send_message(
-            chat_id=GROUP_ID,
-            message_thread_id=TOPIC_ANNOUNCE,
-            text=text
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                message_thread_id=TOPIC_ANNOUNCE,
+                text=text
+            )
+        except:
+            pass
         # тема 24
-        await context.bot.send_message(
-            chat_id=GROUP_ID,
-            message_thread_id=TOPIC_CATALOG,
-            text=text
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                message_thread_id=TOPIC_CATALOG,
+                text=text
+            )
+        except:
+            pass
         return
 
     # Если сообщение в теме 24 — добавить кнопку заказа
     if update.effective_message.message_thread_id == TOPIC_CATALOG:
         keyboard = [[InlineKeyboardButton("🎟 Заказать билет", callback_data="catalog")]]
-        await context.bot.send_message(
-            chat_id=GROUP_ID,
-            message_thread_id=TOPIC_CATALOG,
-            text="🚃 Хотите билетик?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                message_thread_id=TOPIC_CATALOG,
+                text="🚃 Хотите билетик?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except:
+            pass
 
 # ---------- MAIN ----------
 def main():
+    print("Запуск бота...")
+    
+    # Создаем приложение
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     # Команды
@@ -353,8 +357,9 @@ def main():
         group_message_handler
     ))
 
-    # Запуск
-    application.run_polling()
+    # Запуск с очисткой старых запросов
+    print("Бот запущен и готов к работе!")
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
