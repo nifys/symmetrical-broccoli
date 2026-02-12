@@ -22,7 +22,7 @@ from telegram.constants import ParseMode
 
 # ---------- НАСТРОЙКИ ----------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8223338991:AAFcRy3QWcjd2wm2KXrF_W9IkgFoJ0j2IBA")
-ADMIN_ID = 7352226640
+ADMIN_ID = 8294608065
 GROUP_ID = -1003868647705
 TOPIC_CATALOG = 24      # тема, где кнопка заказа
 TOPIC_NEWS = 3          # тема с расписанием/новостями
